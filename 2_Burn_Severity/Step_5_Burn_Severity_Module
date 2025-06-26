@@ -1,0 +1,319 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Evaluation / Comparison module for mapping forest strucure with GEDI
+// Author T. Mayer 7/24/24; NASA SERVIR, Univeristy of Alabama in Huntsville, and University of Twente ITC
+// Script for cross comparsing various canopy Height Modles and in situ to compare RF model products
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+var ROI = ee.Geometry.Rectangle([24.483975980464127,-33.345729637978984,23.649015042964127,-33.83078248926919])
+Map.addLayer(ROI, {}, 'ROI')
+Map.centerObject(ROI,12);
+
+
+var SA_prediction = ee.Image('projects/servir-sco-assets/assets/Rx_Fire/SA_Rest_Regression_Predicted_Image')
+Map.addLayer(SA_prediction, {}, "SA_prediction")
+
+//////////////////////////////////////////////////////////////////////
+//
+// Comparison Data
+// Input date to compare
+//
+//////////////////////////////////////////////////////////////////////
+
+var glad = ee.Image("projects/glad/GLCLU2020/Forest_height_2020")
+var canopy_ht = ee.ImageCollection("projects/meta-forest-monitoring-okw37/assets/CanopyHeight")
+var in_situ = ee.FeatureCollection('users/tjm0042/PHD/SA_Rest/Height_Avg_max_xycsv')
+
+///////////////////////////////////////////////////////////////////////////////////////
+//
+// Evaluation 
+//
+///////////////////////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////////
+///
+/// Glad 30m
+///
+///////////////////////////////////////////////////////////////////////////
+
+///toggle off these two lines for bareground concerns
+var glad_add_gte = glad.gte(1).clip(ROI); ///////remove bareground as considered by glad
+var glad_add_gte_only = glad.updateMask(glad_add_gte);
+
+///////Glad
+var stacked_Comp_glad = SA_prediction.addBands(glad_add_gte_only)
+Map.addLayer(stacked_Comp_glad, {}, "stacked_Comp_glad", false)
+
+////Random sample approach
+var rand_Pts = ee.FeatureCollection.randomPoints({region: ROI, points: 1000, seed: 42, maxError:10})
+print("rand_Pts", rand_Pts)
+
+
+var glad_sample = stacked_Comp_glad.sample({region: rand_Pts,scale:1,numPixels: 10e13,seed:42,geometries: true})
+print("glad_sample", glad_sample)
+Map.addLayer(glad_sample, {color: 'green'} , "glad_sample", false)
+Export.table.toDrive(glad_sample, "glad_sample")
+/////////////
+// Calculate RMSE
+var calculateRmse = function(input, string) {
+    var observed = ee.Array(
+      input.aggregate_array(string));
+    var p_class = ee.Array(
+      input.aggregate_array('classification'));
+    var rmse = observed.subtract(p_class).pow(2)
+      .reduce('mean', [0]).sqrt().get([0]);
+    return rmse;
+};
+var rmse = calculateRmse(glad_sample, 'b1');
+print('Glad v. CH RF', rmse)
+
+// Create a plot of observed vs. predicted values
+var glad_chart = ui.Chart.feature.byFeature({
+  features: glad_sample.select(['b1', 'classification']),
+  xProperty: 'b1',
+  yProperties: ['classification'],
+}).setChartType('ScatterChart')
+  .setOptions({
+    title: 'Glad v. CH RF',
+    dataOpacity: 0.8,
+    hAxis: {'title': 'Observed'},
+    vAxis: {'title': 'Predicted'},
+    legend: {position: 'right'},
+    series: {
+      0: {visibleInLegend: false,color: '#525252',pointSize: 3,pointShape: 'triangle',},
+    },
+    trendlines: {
+      0: {type: 'linear', color: 'black', lineWidth: 1,pointSize: 0,labelInLegend: 'Linear Fit',visibleInLegend: true,showR2: true}
+    },
+    chartArea: {left: 100, bottom:50, width:'50%'},
+
+});
+print('Glad v. CH RF chart', glad_chart);
+
+
+///////////////////////////////////////////////////////////////////////////
+///
+///// WRI 1m
+///
+///////////////////////////////////////////////////////////////////////////
+
+var canopy_ht_gte_only = canopy_ht.map(function(image) { 
+  var image_2 = image.gte(1);
+  var image_3 = image.updateMask(image_2);
+  return image_3.clip(ROI); 
+}).mosaic()
+
+var vizParams = {bands: ["cover_code"], max: 13, min: 2, opacity: 1, palette: ["5f920c","187328","144b2a","172313"]};
+
+Map.addLayer(canopy_ht_gte_only, vizParams, "canopy_ht_gte_only", false) //min: 0, max: 250, palette: palette
+print("canopy_ht_gte_only", canopy_ht_gte_only)
+
+
+///////WRI
+var stacked_Comp_wri = SA_prediction.addBands(canopy_ht_gte_only)
+Map.addLayer(stacked_Comp_wri, {}, "stacked_Comp_wri", false)
+
+////Random sample approach
+var rand_Pts_wri = ee.FeatureCollection.randomPoints({region: ROI, points: 1000, seed: 42, maxError:10})
+print("rand_Pts_wri", rand_Pts_wri)
+
+var wri_sample = stacked_Comp_wri.sample({region: rand_Pts_wri, scale:1, numPixels: 10e13, seed:42, geometries: true})
+print("wri_sample", wri_sample)
+Map.addLayer(wri_sample, {color: 'yellow'} , "wri_sample", false)
+Export.table.toDrive(wri_sample, "wri_sample")
+/////////////
+// Calculate RMSE
+var calculateRmse = function(input, string) {
+    var observed = ee.Array(
+      input.aggregate_array(string));
+    var p_class = ee.Array(
+      input.aggregate_array('classification'));
+    var rmse = observed.subtract(p_class).pow(2)
+      .reduce('mean', [0]).sqrt().get([0]);
+    return rmse;
+};
+var rmse_wri = calculateRmse(wri_sample, 'cover_code');
+print('WRI v. CH RF RMSE', rmse_wri)
+
+// Create a plot of observed vs. predicted values
+var wri_chart = ui.Chart.feature.byFeature({
+  features: wri_sample.select(['cover_code', 'classification']),
+  xProperty: 'cover_code',
+  yProperties: ['classification'],
+}).setChartType('ScatterChart').setOptions({ title: 'WRI v. CH RF',dataOpacity: 0.8,hAxis: {'title': 'Observed'}, vAxis: {'title': 'Predicted'},legend: {position: 'right'},
+    series: {
+      0: {visibleInLegend: false,color: '#525252',pointSize: 3,pointShape: 'triangle',},
+    },
+    trendlines: {
+      0: {type: 'linear', color: 'black', lineWidth: 1,pointSize: 0,labelInLegend: 'Linear Fit',visibleInLegend: true,showR2: true}
+    },
+    chartArea: {left: 100, bottom:50, width:'50%'},
+});
+print('WRI v. CH RF chart', wri_chart);
+
+///////////////////////////////////////////////////////////////////////////
+///
+/// In situ Max_Total_height 30m
+///
+///////////////////////////////////////////////////////////////////////////
+
+var in_situ_out = in_situ//.filter(ee.Filter.lte('Max_Total_height', 9998)) //remove n/a
+print("in_situ_out", in_situ_out)
+Map.addLayer(in_situ_out, {}, "in_situ_out", false)
+
+var stacked_Comp_insitu = SA_prediction.sampleRegions({collection: in_situ_out,scale: 10});
+
+Map.addLayer(stacked_Comp_insitu, {}, "stacked_Comp_insitu", false)
+print('stacked_Comp_insitu', stacked_Comp_insitu);
+
+// Calculate RMSE
+var calculateRmse = function(input, string) {
+    var observed = ee.Array(
+      input.aggregate_array(string));
+    var p_class = ee.Array(
+      input.aggregate_array('classification'));
+    var rmse = observed.subtract(p_class).pow(2)
+      .reduce('mean', [0]).sqrt().get([0]);
+    return rmse;
+};
+var rmse_in_situ_max = calculateRmse(stacked_Comp_insitu, 'Max_Total_height');
+print('Max_Total_height In situ v. RF', rmse_in_situ_max)
+
+
+// Create a plot of observed vs. predicted values
+var insitu_Max_Total_height = ui.Chart.feature.byFeature({
+  features: stacked_Comp_insitu.select(['Max_Total_height', 'classification']),
+  xProperty: 'Max_Total_height',
+  yProperties: ['classification'],
+}).setChartType('ScatterChart')
+  .setOptions({
+    title: 'In situ v. RF',
+    dataOpacity: 0.8,
+    hAxis: {'title': 'Observed'},
+    vAxis: {'title': 'Predicted'},
+    legend: {position: 'right'},
+    series: {
+      0: {visibleInLegend: false,color: '#525252',pointSize: 3,pointShape: 'triangle',},
+    },
+    trendlines: {
+      0: {type: 'linear', color: 'black', lineWidth: 1,pointSize: 0,labelInLegend: 'Linear Fit',visibleInLegend: true,showR2: true}
+    },
+    chartArea: {left: 100, bottom:50, width:'50%'},
+
+});
+print('Max_Total_height In situ v. RF', insitu_Max_Total_height);
+
+///////////////////////////////////////////////////////////////////////////
+///
+/// In situ Average_height 30m
+///
+///////////////////////////////////////////////////////////////////////////
+
+var in_situ_out = in_situ//.filter(ee.Filter.lte('Max_Total_height', 9998)) //remove n/a
+print("in_situ_out", in_situ_out)
+Map.addLayer(in_situ_out, {}, "in_situ_out", false)
+
+var stacked_Comp_insitu = SA_prediction.sampleRegions({
+  collection: in_situ_out,
+  scale: 10
+});
+
+Map.addLayer(stacked_Comp_insitu, {}, "stacked_Comp_insitu", false)
+print('stacked_Comp_insitu', stacked_Comp_insitu);
+
+// Calculate RMSE
+var calculateRmse = function(input, string) {
+    var observed = ee.Array(
+      input.aggregate_array(string));
+    var p_class = ee.Array(
+      input.aggregate_array('classification'));
+    var rmse = observed.subtract(p_class).pow(2)
+      .reduce('mean', [0]).sqrt().get([0]);
+    return rmse;
+};
+var rmse_in_situ = calculateRmse(stacked_Comp_insitu, 'Average_height');
+print('Average_height In situ v. RF', rmse_in_situ)
+
+
+// Create a plot of observed vs. predicted values
+var insitu_Average_height_chart = ui.Chart.feature.byFeature({
+  features: stacked_Comp_insitu.select(['Average_height', 'classification']),
+  xProperty: 'Average_height',
+  yProperties: ['classification'],
+}).setChartType('ScatterChart')
+  .setOptions({
+    title: 'In situ v. RF',
+    dataOpacity: 0.8,
+    hAxis: {'title': 'Observed'},
+    vAxis: {'title': 'Predicted'},
+    legend: {position: 'right'},
+    series: {
+      0: {visibleInLegend: false,color: '#525252',pointSize: 3,pointShape: 'triangle',},
+    },
+    trendlines: {
+      0: {type: 'linear', color: 'black', lineWidth: 1,pointSize: 0,labelInLegend: 'Linear Fit',visibleInLegend: true,showR2: true}
+    },
+    chartArea: {left: 100, bottom:50, width:'50%'},
+
+});
+print('Average_height In situ v. RF', insitu_Average_height_chart);
+
+///////////////////////////////////////////////////////////////////////////
+///
+/// Cross compare all
+///
+///////////////////////////////////////////////////////////////////////////
+
+
+var mergefc = stacked_Comp_insitu.merge(wri_sample).merge(glad_sample)
+print("mergefc", mergefc)
+
+
+//Export.table.toDrive(mergefc)
+
+// var comp_all =  ui.Chart.feature.byProperty({features:mergefc, xProperties: "classification"})
+// print("comp_all", comp_all)
+
+/////////////////////////////////////////////////////
+var arrayMaker = function(inputfc, string) {
+    var fc_out = ee.Array(inputfc.aggregate_array(string))
+    return fc_out
+};
+var arrayMaker_out_classification = arrayMaker(mergefc, 'classification');
+print('arrayMaker_out_classification', arrayMaker_out_classification)
+
+// var arrayMaker_out_Average_height= arrayMaker(mergefc, 'Average_height');
+// print('arrayMaker_out_Average_height', arrayMaker_out_Average_height)
+
+var arrayMaker_out_Max_Total_height= arrayMaker(mergefc, 'Max_Total_height');
+print('arrayMaker_out_Max_Total_height', arrayMaker_out_Max_Total_height)
+
+var arrayMaker_out_cover_code= arrayMaker(mergefc, 'cover_code');
+print('arrayMaker_out_cover_code', arrayMaker_out_cover_code)
+
+var arrayMaker_b1= arrayMaker(mergefc, 'b1');
+print('arrayMaker_b1', arrayMaker_b1)
+
+var array_cat = ee.Array.cat([arrayMaker_out_Max_Total_height,arrayMaker_out_cover_code,arrayMaker_b1])
+print('array_cat', array_cat)
+
+var array_chart = ui.Chart.array.values({array: array_cat, axis: 0, xLabels: arrayMaker_out_classification})
+                .setSeriesNames(['in situ max height 30m  WRI 1m CHM GLAD 30m CHM'])
+                .setOptions({
+                  title: 'Comp All as Arrays',
+                  colors: ['1d6b99', 'cf513e', '6b991d', '994b1d'],
+                  pointSize: 4,
+                  dataOpacity: 0.4,
+                  hAxis: {
+                    'title': 'classification',
+                    titleTextStyle: {italic: false, bold: true}
+                  },
+                  vAxis: {
+                    'title': 'CHMs and in situ',
+                    titleTextStyle: {italic: false, bold: true}
+                  }
+                });
+print("still in dev array_chart", array_chart);
+

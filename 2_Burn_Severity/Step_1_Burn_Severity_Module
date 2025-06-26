@@ -1,0 +1,133 @@
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////
+////   Step 1 of running the Forest_Structure_Function_Module This script generates and exports S1 Acending and Descending images
+////   Update ROI, Dates of intrest, export path
+////   Author T. Mayer 5/22/25 Earth Hub 
+////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var baseModule = require("users/kaw0055/Rx_Fire:2_Burn_Severity/main.js");
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////
+////  ROI
+////  Choose the ROI of intrest
+////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var ROI = ee.Geometry.Rectangle([-87.3343240593025, 34.330559383876356, -87.2897779319832, 34.363157285275136]);
+/// Tapville: https://usfs.maps.arcgis.com/apps/webappviewer/index.html?id=b196b5958480421fa7b5ee2a6ce91d31
+
+// National Forest	National Forests in Alabama
+// Ranger District	Bankhead
+// Burn Block Name	TAPSVILLE
+// Burn Status	Completed
+// Acres Burned	915
+// Burn Date	03/08/2025
+// Benefit of Burn	Hazardous fuel reduction
+
+// var ROI = ee.FeatureCollection("users/tjm0042/PHD/BTAP_P1")
+Map.centerObject(ROI);
+Map.addLayer(ROI, {}, "ROI")
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////
+////  Input Imagery
+////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var s1Descending =  ee.ImageCollection('COPERNICUS/S1_GRD')
+            .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+            .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+            .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+            .filter(ee.Filter.eq('instrumentMode', 'IW'));
+
+var s1Ascending = ee.ImageCollection('COPERNICUS/S1_GRD')
+            .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+            .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+            .filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+            .filter(ee.Filter.eq('instrumentMode', 'IW'));
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////
+////  Date Selector
+////  Choose dates of intrest, update the export path
+////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Do months 5-10 (inclusive) individually
+// Do 1 month at a time.
+// if multiple month/year is added; baseModule.utils.timePeriodSelector will give you all
+
+var monthsList = [1,2,3,4,5, 6, 7, 8, 9, 10,11, 12];    // <--- INPUT NEEDED: MONTH NUMBER
+var yearsList = [2024];
+
+
+
+// var dateFormat = yearsList[0] + '-0' + monthsList[0] + '-01';
+
+var dateOfProcess = ee.Date.fromYMD(yearsList[0], monthsList[0], 1);
+var endDateOfProcess = dateOfProcess.advance(1, 'month').advance(-1, 'day');
+var dateFormat = dateOfProcess.format('YYYY-MM-dd').getInfo();
+
+var exportPath = 'projects/servir-sco-assets/assets/Rx_Fire'; //Updated for SCO folder
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////  Descend 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var s1DescendingFinal = ee.ImageCollection(
+  baseModule.utils.timePeriodSelector(s1Descending, monthsList, yearsList, ROI)
+).sort('system:time_start');
+
+print("s1DescendingFinal", s1DescendingFinal)
+
+// Terrain Correction
+s1DescendingFinal = baseModule.s1Correction.radiometricTerrainCorrection(s1DescendingFinal);
+// Lee filter
+s1DescendingFinal = baseModule.s1Correction.refinedLeeSpeckleFilter(s1DescendingFinal);
+
+// Get a median composite for the filtered image
+var s1DescendingFinalImg = s1DescendingFinal.select(['VV', 'VH']).median();
+s1DescendingFinalImg = s1DescendingFinalImg.set('system:time_start', dateOfProcess.millis(), 'system:time_end', endDateOfProcess.millis());
+print('s1DescendingFinalImg', s1DescendingFinalImg);
+
+// Export Terrain corrected and Lee filtered image
+// parameters to the function call are: image, description, region, scale, assetId
+baseModule.utils.exportImageAsset(s1DescendingFinalImg, 's1DescendingFinalImg_' + dateFormat, ROI, 10,
+exportPath + '/Descending_' + dateFormat);
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////  Ascend 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var s1AscendingFinal = ee.ImageCollection(
+  baseModule.utils.timePeriodSelector(s1Ascending, monthsList, yearsList, ROI)
+).sort('system:time_start');
+
+// Terrain Correction
+s1AscendingFinal = baseModule.s1Correction.radiometricTerrainCorrection(s1AscendingFinal);
+// Lee Filter
+s1AscendingFinal = baseModule.s1Correction.refinedLeeSpeckleFilter(s1AscendingFinal);
+
+// Get a median composite for the filtered image
+var s1AscendingFinalImg = s1AscendingFinal.select(['VV', 'VH']).median();
+s1AscendingFinalImg = s1AscendingFinalImg.set('system:time_start', dateOfProcess.millis(), 'system:time_end', endDateOfProcess.millis());
+print('s1AscendingFinalImg', s1AscendingFinalImg);
+
+// Export Terrain corrected and Lee filtered image
+// parameters to the function call are: image, description, region, scale, assetId
+baseModule.utils.exportImageAsset(s1AscendingFinalImg, 's1AscendingFinalImg_' + dateFormat, ROI, 10,
+exportPath + '/Ascending_' + dateFormat);
