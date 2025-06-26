@@ -92,6 +92,10 @@ var s1DescendingPath = 'projects/servir-sco-assets/assets/Rx_Fire/Descending_202
 var s1AscendingPath = 'projects/servir-sco-assets/assets/Rx_Fire/Ascending_2024-01-01' /////////update as needed
 
 
+var ls_pre = 'projects/servir-sco-assets/assets/Rx_Fire/LandsatCompositeIndices_NBR_pre_2020'
+
+var s2_pre = 'projects/servir-sco-assets/assets/Rx_Fire/S2CompositeIndices_NBR_pre_2020'
+
 //'projects/servir-sco-assets/assets/Bhutan/Sentinel1Ascending';
 
 
@@ -279,6 +283,21 @@ Map.addLayer(s2Indices.clip(ROI), {}, 's2Indices');
 baseModule.utils.exportImageAsset(s2FinalImage, 'S2Composite_' + yearsList[0], ROI, 30, exportPath + '/S2Composite_' + yearsList[0]);
 baseModule.utils.exportImageAsset(s2Indices, 'S2CompositeIndices_' + yearsList[0], ROI, 30, exportPath + '/S2Indices_' + yearsList[0]);
 
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////
+////  LS and LS dNBR
+////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+s2_pre = ee.Image(s2_pre)
+var s2Indices_dNBR = baseModule.indices.calculate_S2_dNBR(s2_pre, s2Indices)
+baseModule.utils.exportImageAsset(s2Indices_dNBR, 'S2CompositeIndices_dNBR_' + yearsList[0], ROI, 30, exportPath + '/S2Indices_dNBR_' + yearsList[0]);
+
+ls_pre = ee.Image(ls_pre)
+var landsatIndices_dNBR =  baseModule.indices.calculate_LS_dNBR(ls_pre, landsatIndices)
+baseModule.utils.exportImageAsset(landsatIndices_dNBR, 'LandsatCompositeIndices_dNBR_' + yearsList[0], ROI, 30, exportPath + '/LandsatIndices_dNBR_' + yearsList[0]);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

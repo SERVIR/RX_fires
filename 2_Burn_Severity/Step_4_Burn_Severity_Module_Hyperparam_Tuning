@@ -1,0 +1,422 @@
+//////////////////////////////////////////////////////////
+//
+// Define model parameters and perform a prelimnary grid search/tuning  eoffrt to infor the final model settings/paramaters
+// Author Author T. Mayer 5/22/25 Earth Hub 
+//
+//////////////////////////////////////////////////////////
+
+var ROI = ee.Geometry.Rectangle([-87.3343240593025, 34.330559383876356, -87.2897779319832, 34.363157285275136]);
+/// Tapville: https://usfs.maps.arcgis.com/apps/webappviewer/index.html?id=b196b5958480421fa7b5ee2a6ce91d31
+
+// National Forest	National Forests in Alabama
+// Ranger District	Bankhead
+// Burn Block Name	TAPSVILLE
+// Burn Status	Completed
+// Acres Burned	915
+// Burn Date	03/08/2025
+// Benefit of Burn	Hazardous fuel reduction
+
+// Print polygon area in square kilometers.
+print('Polygon area in Hectares: ', ROI.area().divide(1e4).round())
+print('Polygon area in sq KM: ', ROI.area().divide(1e6).round())
+
+//Map.addLayer(pfi_test_roi, {}, "pfi_test_roi")
+
+
+
+
+// var exportPath = 'users/tjm0042/PHD/GEDI_Height/';
+var ROI = ROI//ee.FeatureCollection("users/tjm0042/PHD/BTAP_P1")
+Map.addLayer(ROI, {}, 'ROI')
+//Map.centerObject(ROI,12);
+
+var exportPath = 'projects/servir-sco-assets/assets/Rx_Fire';
+
+var importPath = 'projects/servir-sco-assets/assets/Rx_Fire/'
+
+//////////////////////////////////////////////////////////
+
+
+// Construct the path to the exported images
+// var s2Composite = ee.Image(importPath + 'S2Composite_2022');
+var demBands = ee.Image(importPath + 'DEMindices_2024');
+// var gediMosaicA = ee.Image(importPath + 'GEDIindicesA_2022').select('rh.*')//.select("rh100");
+// print("gediMosaicA", gediMosaicA)
+// var gediMosaicB = ee.Image(importPath + 'GEDIindicesB_2022');
+var S2comp = ee.Image(importPath + 'S2Composite_2024').select(['red', 'green', 'blue', 'nir', 'swir1', 'swir2']).rename(['S2_red', 'S2_green', 'S2_blue', 'S2_nir', 'S2_swir1', 'S2_swir2']);
+var S2indices = ee.Image(importPath + 'S2Indices_2024').select(['S2_NDWI', 'S2_MNDWI', 'S2_SAVI', 'S2_NDMI', 'S2_NDBI', 'S2_NBR']);
+var HLS = ee.Image(importPath + 'HLS_2024').select(['NDWI', 'MNDWI', 'SAVI', 'NDMI', 'NDBI', 'NBR']).rename(['NDWI_HLS', 'MNDWI_HLS', 'SAVI_HLS', 'NDMI_HLS', 'NDBI_HLS', 'NBR_HLS']);
+var LS = ee.Image(importPath + 'LandsatIndices_2024').select(['NDWI', 'MNDWI', 'SAVI', 'NDMI', 'NDBI', 'NBR']).rename(['NDWI_LS', 'MNDWI_LS', 'SAVI_LS', 'NDMI_LS', 'NDBI_LS', 'NBR_LS']);
+var LS_Tcap = ee.Image(importPath + 'landsatTasseledCapIndices_2024');
+var LScomp = ee.Image(importPath + 'S2Composite_2024').select(['red', 'green', 'blue', 'nir', 'swir1', 'swir2']).rename(['L2_red', 'L2_green', 'L2_blue', 'L2_nir', 'L2_swir1', 'L2_swir2']);
+var S1_A = ee.Image(importPath + 's1Ascending_2024').select(['VV', 'VH', 'ratio', 'ndratio']).rename(['VV_A', 'VH_A', 'ratio_A', 'ndratio_A']);
+// var S1_D = ee.Image(importPath + 's1Descending_2022').select(['VV', 'VH', 'ratio', 'ndratio']).rename(['VV_D', 'VH_D', 'ratio_D', 'ndratio_D']);
+
+
+// Get the image footprint to be used as geometry
+var S2indices_Clip = S2indices.clip(ROI);
+
+var viz = {
+  min: 0.0, max: 0.3, gamma: 1.2,
+  bands: ['S2_NDVI'],
+};
+Map.addLayer(S2indices_Clip, viz, 'Sentinel-2 NDVI', false);
+
+//
+// var gediVis = {
+//   min: 0,
+//   max: 200,
+//   palette: ['#edf8fb','#b2e2e2','#66c2a4','#2ca25f','#006d2c'],
+//   bands: ['rh100']
+// };
+  
+// Map.addLayer(gediMosaicA.select('rh100'), gediVis, 'rh100', false);
+
+var stacked = S2indices
+  .addBands(demBands)
+  .addBands(S2comp)
+  .addBands(LScomp)
+  //.addBands(gediMosaicA)
+  // .addBands(gediMosaicB)
+  .addBands(HLS)
+  .addBands(LS)
+  .addBands(LS_Tcap)
+  .addBands(S1_A).clip(ROI);
+  // .addBands(S1_D).clip(ROI);
+
+Map.addLayer(stacked, {}, 'stacked', false);
+
+///////////////////////////////////////////////////////////////////////////////
+// Resample to a Grid
+// ****************************************************
+
+// GEDI measurements have horizontal accuracy of +/- 9 m
+// This is problematic when matching the GEDI AGB values
+// to Sentinel-2 pixels.
+// To overcome this, we resample and aggregate all input
+// images to a larger pixel-grid.
+
+
+var utils = require("users/kaw0055/Rx_Fire:2_Burn_Severity/utils.js");
+
+var gridScale = 10
+
+var regrid_out = utils.regrid(gridScale, stacked, 'bilinear') 
+
+Map.addLayer(regrid_out, {}, 'regrid_out', false);
+// As larger GEDI pixels contain masked original
+// pixels, it has a transparency mask.
+// We update the mask to remove the transparency
+var stackedResampled = regrid_out.updateMask(regrid_out.mask().gt(0));
+
+// Visualize the resampled layers
+Map.addLayer(stackedResampled, {}, 'stackedResampled_Regrid_Func', false);
+
+
+///////////////////////////////////////////////////////////////////////////////
+
+
+// Extract Training Features
+// ****************************************************
+
+var predictors = S2indices.bandNames().cat(demBands.bandNames()).cat(HLS.bandNames()).cat(LS.bandNames()).cat(LS_Tcap.bandNames()).cat(S1_A.bandNames()).cat(S2comp.bandNames()).cat(LScomp.bandNames())//.cat(S1_D.bandNames())//.cat(gediMosaicA.bandNames());
+print('predictors', predictors);
+
+
+
+var fc = Rx_Fire.merge(Rx_Fire_non)
+print("fc", fc)
+Map.addLayer(fc, {}, "fc")
+
+
+
+
+// Define the rasterization property
+var property = 'Rx_Fire';  // should be 0 or 1
+
+// Define a region of interest (e.g., the bounds of the feature collection)
+var region = fc.geometry().bounds();
+
+// Define the scale and projection (10 meters, EPSG:4326)
+var scale = 10;
+var crs = 'EPSG:4326';
+
+// Create a constant image to use for projection and resolution
+var base = ee.Image.constant(0).clip(ROI).reproject({
+  crs: crs,
+  scale: scale
+});
+
+// Rasterize the feature collection using reduceToImage
+var raster = fc.reduceToImage({
+  properties: [property],
+  reducer: ee.Reducer.first()
+}).clip(ROI);
+
+// Reproject raster to ensure 10m resolution in EPSG:4326
+var raster10m = raster.reproject({
+  crs: crs,
+  scale: scale
+});
+
+// Optional: Visualize
+
+Map.addLayer(raster10m, {min: 0, max: 1, palette: ['green', 'red']}, 'Rx Fire Rasterized');
+
+
+//////////////////////
+
+var predicted = raster10m// | gediMosaicA..select('rh.*').bandNames(); //| ['rh10']///| gediMosaicA.bandNames();  //gediMosaicA.select('rh10').bandNames()//
+print('predicted', predicted);
+
+// var predicted_length =  predicted.length()
+// print("predicted_length", predicted_length)
+
+var predictorImage = stackedResampled.select(predictors);
+var predictedImage = stackedResampled.select([predicted]).unmask();
+// Map.addLayer(predictedImage, {}, "continous_variable_of_intrest", false)
+
+///////////////////////////////////////////////////////////////////////////////
+
+// var glad = ee.Image("projects/glad/GLCLU2020/Forest_height_2020").clip(ROI)
+// // Map.addLayer(glad, {}, "glad", false)
+// // glad = glad.gte(1).select(['b1']).rename(['class']);
+// // print("glad", glad)
+
+// // var classMask = gediMosaicA.addBands(glad)
+// // Map.addLayer(classMask, {}, "classMask", false)
+// // print("classMask", classMask)
+
+
+// var numSamples = 10000;
+// var numnonSamples = 5000;
+// var total_samples = numSamples + numnonSamples
+// print("total_samples", total_samples)
+// /////
+
+
+
+// function sample_FC_function (list, imageMask, imageGEDI, imageComp, number, ROI, gridScale, numnonSamples, numSamples) {
+  
+//         function item_out (i){
+//           return ee.String(i)
+//         }
+
+//   list = list.map(item_out);
+  
+//   // var step1 = list.get()
+//   var step2 = imageMask.gte(1).select('b1').rename('class')
+//   var step3 = imageGEDI.select(list).addBands(step2)
+//   var step4 = imageComp.addBands(step3).stratifiedSample({
+//                 numPoints: number,
+//                 classBand: 'class',
+//                 region: ROI,
+//                 scale: gridScale,
+//                 seed: 42,
+//                 classValues: [0, 1],
+//                 classPoints: [numnonSamples, numSamples],  
+//                 dropNulls: true,
+//                 tileScale: 16,
+//                 geometries: true
+//             }).randomColumn();
+//   return ee.FeatureCollection(step4)
+// }
+
+
+// var training = sample_FC_function(predicted, glad, gediMosaicA, stackedResampled, total_samples, ROI, gridScale, numnonSamples, numSamples)
+// print("training", training.limit(10))
+// Map.addLayer(training)
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////
+var glad = ee.Image("projects/glad/GLCLU2020/Forest_height_2020").clip(ROI)
+Map.addLayer(glad, {}, "glad", false)
+glad = glad.gte(1).select(['b1']).rename(['class']);
+print("glad", glad)
+
+var classMask = raster10m.addBands(glad)
+Map.addLayer(classMask, {}, "classMask", false)
+print("classMask", classMask)
+
+
+
+
+var proj = S2indices_Clip.projection()
+var grid = ROI.coveringGrid(proj, 10)
+grid = ee.FeatureCollection(grid).randomColumn("random", 42);
+Map.addLayer(grid, {}, "grid")
+print("spatial_partition number of boxes in the grid", grid.size())
+var val_samp = grid.filter('random <= 0.1').set("samp_type","val_samp");
+var test_samp = grid.filter('random <= 0.3 and random >= 0.1').set("samp_type","test_samp");
+var train_samp = grid.filter('random >= 0.3').set("samp_type","train_samp");
+
+print('val_samp 10%', val_samp.size());
+Map.addLayer(val_samp, {color: "blue"}, "val_samp 10%", false)
+
+print('test_samp 20%', test_samp.size());
+Map.addLayer(test_samp, {color: "red"}, "test_samp 20%", false)
+
+print('train_samp 70%', train_samp.size());
+Map.addLayer(train_samp, {color: "green"}, "train_samp 70%", false)
+
+
+function sample_partition(Image, Labeled_Image, total_samples, region, gridScale, numnonSamples, numSamples) {
+    var sample_partition_out = Image.addBands(Labeled_Image)
+    .stratifiedSample({
+      numPoints: total_samples,
+      classBand: 'class',
+      region: region, 
+      scale: gridScale,
+      seed: 42,
+      classValues: [0, 1],
+      classPoints: [numnonSamples, numSamples],  
+      dropNulls: true,
+      tileScale: 16,
+      geometries:true
+  }).randomColumn();
+return ee.FeatureCollection(sample_partition_out)
+}
+
+
+var numSamples = 5;
+var numnonSamples = 5;
+var total_samples = numSamples + numnonSamples
+print("total_samples", total_samples)
+/////
+
+var training = sample_partition(stackedResampled, classMask, total_samples, train_samp, gridScale, numSamples, numnonSamples)
+Map.addLayer(training, {color: "green"}, "training")
+print("training" ,training)
+
+var testing = sample_partition(stackedResampled, classMask, total_samples, test_samp, gridScale, numSamples, numnonSamples)
+Map.addLayer(testing, {color: "red"}, "testing")
+
+var validation = sample_partition(stackedResampled, classMask, total_samples, val_samp, gridScale, numSamples, numnonSamples)
+Map.addLayer(validation, {color: "blue"}, "validation")
+
+
+
+
+
+//Adjust to make GEDI binary for classificaiton 
+
+// //var classMask = predictedImage.gte(3).rename('class'); //<----------------use to remove smaller Rh values if needed
+
+
+// var classMask = predictedImage.mask().toInt().rename('class');
+// Map.addLayer(classMask, {}, "classMask",false)
+
+
+// var glad = ee.Image("projects/glad/GLCLU2020/Forest_height_2020").clip(ROI)
+// Map.addLayer(glad, {}, "glad", false)
+// glad = glad.gte(1).select(['b1']).rename(['class']);
+// print("glad", glad)
+
+// var classMask = gediMosaicA.addBands(glad)
+// Map.addLayer(classMask, {}, "classMask", false)
+// print("classMask", classMask)
+
+// //////////////////////////////////////////////////////////////////////////////////
+// var numSamples = 10000;
+// var numnonSamples = 5000;
+// var total_samples = numSamples + numnonSamples
+// print("total_samples", total_samples)
+// /////
+
+// var training = stackedResampled.addBands(classMask)
+//   .stratifiedSample({
+//     numPoints: total_samples,
+//     classBand: 'class',
+//     region: ROI,
+//     scale: gridScale,
+//     seed: 42,
+//     classValues: [0, 1],
+//     classPoints: [numnonSamples, numSamples],  
+//     dropNulls: true,
+//     tileScale: 16,
+//     geometries: true
+// }).randomColumn();
+// Map.addLayer(training, {}, "training")
+// print("training", training.limit(15))
+
+//////////////////////////////////////////////////////////////////
+/////
+/////Model Tuning: Run many RF models and export as csv 
+/////
+//////////////////////////////////////////////////////////////////
+/////Global variables (likely to change with the timeselect function added)
+var baseModule = require("users/kaw0055/Rx_Fire:2_Burn_Severity/model.js");
+
+var year = 2024
+var bands = predictors
+var label = 'class'
+var string = 'Rx_Fire'
+
+//////////////////////////////////////////////////////////
+
+// let's create the parameter space
+var numberOfTrees = ee.List.sequence(30, 120, 10);
+var variablesPerSplit = ee.List([null, bands.size()]);
+var minLeafPopulation = ee.List.sequence(1, 5, 1);
+var bagFraction = ee.List.sequence(0.5, .8, 0.1);
+var maxNodes = ee.List([null]);
+var model_mode = ee.String("REGRESSION"); //Beware this will run all stats so make sure you weigh the value/information
+//of the stat complementary to the mode running in CLASSIFICATION, REGRESSION, PROBABILITY, MULTIPROBABILITY, RAW, RAW_REGRESSION
+//var predict_label = ee.List(['rh50'])//ee.List(predicted)
+
+
+
+var parameterSpace = ee.Dictionary({
+  numberOfTrees: numberOfTrees,
+  variablesPerSplit: variablesPerSplit,
+  minLeafPopulation: minLeafPopulation,
+  bagFraction: bagFraction,
+  maxNodes: maxNodes,
+  model_mode: model_mode,
+ // predict_label: predict_label
+});
+print("parameterSpace", parameterSpace)
+
+
+
+///classification
+// var rfClassifiers = baseModule.randomForest_classification_modelParameterSpace(training, bands, stackedResampled, label, parameterSpace) // trainingSample, bands, finalImagery, label, parameterSpace);
+// rfClassifiers = ee.FeatureCollection(rfClassifiers.flatten());
+//print("Preliminary Grid search rfClassifiers based on parameterspace testing ", rfClassifiers)
+
+//function randomForest_regression_modelParameterSpace(FeatureCollection, bandList, image, label, string, parameterSpace) {
+
+//regression
+var rfClassifiers =  baseModule.randomForest_regression_modelParameterSpace(training, testing, bands, stackedResampled, label, string, parameterSpace)
+rfClassifiers = ee.FeatureCollection(rfClassifiers.flatten());
+
+
+
+var nRFModels = numberOfTrees.size().multiply(variablesPerSplit.size())
+                  .multiply(minLeafPopulation.size()).multiply(bagFraction.size())
+                  .multiply(maxNodes.size())//.multiply(predict_label.length());
+print('You are training ' + nRFModels.getInfo() + ' models. Brace Yourself!');
+
+// This is exported to your google drive in the earthengine folder
+Export.table.toDrive({
+  collection: rfClassifiers,
+  description: 'rf_models_' + string + '_' + year,
+  folder: 'earthengine',
+  fileNamePrefix: 'rf_models_' + string + '_' + year,
+  fileFormat: 'CSV'
+});
+
+var Regression_Predicted_Image_Prelim = stackedResampled.classify(rfClassifiers.first());
+
+var predictVis = {
+  bands: ["classification"],
+  max: 20,
+  min: 1,
+  opacity: 1,
+  palette: ["000000","f5fff4","83d982","24ca11"]
+};
+
+Map.addLayer(Regression_Predicted_Image_Prelim, predictVis, "Regression_Predicted_Image_Prelim")
