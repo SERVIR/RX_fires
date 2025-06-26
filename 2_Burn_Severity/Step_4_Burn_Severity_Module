@@ -1423,6 +1423,7 @@ var S2indices = ee.Image(importPath + 'S2Indices_2024').select(['S2_NDVI', 'S2_N
 var HLS = ee.Image(importPath + 'HLS_2024').select(['NDWI', 'MNDWI', 'SAVI', 'NDMI', 'NDBI', 'NBR']).rename(['NDWI_HLS', 'MNDWI_HLS', 'SAVI_HLS', 'NDMI_HLS', 'NDBI_HLS', 'NBR_HLS']);
 var LS = ee.Image(importPath + 'LandsatIndices_2024').select(['NDWI', 'MNDWI', 'SAVI', 'NDMI', 'NDBI', 'NBR']).rename(['NDWI_LS', 'MNDWI_LS', 'SAVI_LS', 'NDMI_LS', 'NDBI_LS', 'NBR_LS']);
 var LS_Tcap = ee.Image(importPath + 'landsatTasseledCapIndices_2024');
+var LS_Tcap_comp = ee.Image(importPath + 'TOAComposite_2024');
 var LScomp = ee.Image(importPath + 'S2Composite_2024').select(['red', 'green', 'blue', 'nir', 'swir1', 'swir2']).rename(['L2_red', 'L2_green', 'L2_blue', 'L2_nir', 'L2_swir1', 'L2_swir2']);
 var S1_A = ee.Image(importPath + 's1Ascending_2024').select(['VV', 'VH', 'ratio', 'ndratio']).rename(['VV_A', 'VH_A', 'ratio_A', 'ndratio_A']);
 // var S1_D = ee.Image(importPath + 's1Descending_2022').select(['VV', 'VH', 'ratio', 'ndratio']).rename(['VV_D', 'VH_D', 'ratio_D', 'ndratio_D']);
@@ -1456,6 +1457,7 @@ var stacked = S2indices
   .addBands(HLS)
   .addBands(LS)
   .addBands(LS_Tcap)
+  .addBands(LS_Tcap_comp)
   .addBands(S1_A).clip(ROI);
   // .addBands(S1_D).clip(ROI);
 
@@ -1494,7 +1496,7 @@ Map.addLayer(stackedResampled, {}, 'stackedResampled_Regrid_Func', false);
 // Extract Training Features
 // ****************************************************
 
-var predictors = S2indices.bandNames().cat(demBands.bandNames()).cat(HLS.bandNames()).cat(LS.bandNames()).cat(LS_Tcap.bandNames()).cat(S1_A.bandNames()).cat(S2comp.bandNames()).cat(LScomp.bandNames())//.cat(S1_D.bandNames())//.cat(gediMosaicA.bandNames());
+var predictors = S2indices.bandNames().cat(demBands.bandNames()).cat(HLS.bandNames()).cat(LS.bandNames()).cat(LS_Tcap.bandNames()).cat(LS_Tcap_comp.bandNames()).cat(S1_A.bandNames()).cat(S2comp.bandNames()).cat(LScomp.bandNames())//.cat(S1_D.bandNames())//.cat(gediMosaicA.bandNames());
 print('predictors', predictors);
 
 

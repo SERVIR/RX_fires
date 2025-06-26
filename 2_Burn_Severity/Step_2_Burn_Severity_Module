@@ -291,10 +291,10 @@ baseModule.utils.exportImageAsset(s2Indices, 'S2CompositeIndices_' + yearsList[0
 var l8ToaFinalCollection =  ee.ImageCollection(
   baseModule.utils.timePeriodSelector(LS8_TOA, monthsList, yearsList, ROI)
 ).sort('system:time_start');
-l8ToaFinalCollection = l8ToaFinalCollection.select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'QA_PIXEL']);
+l8ToaFinalCollection = l8ToaFinalCollection.select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B9', 'B10', 'B11', 'QA_PIXEL']);
 
 l8ToaFinalCollection = l8ToaFinalCollection.map(function (img) {
-  return img.rename(['blue', 'green', 'red', 'nir', 'swir1', 'swir2', 'QA_PIXEL']);
+  return img.rename(['blue', 'green', 'red', 'nir', 'swir1', 'swir2', 'pan', 'cirrus', 'TIR1', 'TIR2', 'QA_PIXEL']);
 });
 
 var l8ToaTcIndices = baseModule.indices.calculateL8ToaTasseledCapIndices(l8ToaFinalCollection).float();
