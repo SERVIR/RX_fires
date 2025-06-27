@@ -22,7 +22,7 @@ print('Polygon area in Hectares: ', ROI.area().divide(1e4).round())
 print('Polygon area in sq KM: ', ROI.area().divide(1e6).round())
 
 
-var exportPath = 'projects/servir-sco-assets/assets/Rx_Fire';
+var exportPath = 'projects/servir-sco-assets/assets/Rx_Fire/Model_IC/Burn_Severity_IC/';
 
 var importPath = 'projects/servir-sco-assets/assets/Rx_Fire/'
 
@@ -36,13 +36,16 @@ var demBands = ee.Image(importPath + 'DEMindices_2024');
 // var gediMosaicB = ee.Image(importPath + 'GEDIindicesB_2022');
 var S2comp = ee.Image(importPath + 'S2Composite_2024').select(['red', 'green', 'blue', 'nir', 'swir1', 'swir2']).rename(['S2_red', 'S2_green', 'S2_blue', 'S2_nir', 'S2_swir1', 'S2_swir2']);
 var S2indices = ee.Image(importPath + 'S2Indices_2024').select(['S2_NDVI', 'S2_NDWI', 'S2_EVI', 'S2_MNDWI', 'S2_SAVI', 'S2_NDMI', 'S2_NDBI','S2_NBR']).rename(['S2_NDVI', 'S2_NDWI', 'S2_EVI', 'S2_MNDWI', 'S2_SAVI', 'S2_NDMI', 'S2_NDBI','S2_NBR'])
+var S2dNBR = ee.Image(importPath + 'S2Indices_dNBR_2024')
 var HLS = ee.Image(importPath + 'HLS_2024').select(['NDWI', 'MNDWI', 'SAVI', 'NDMI', 'NDBI', 'NBR']).rename(['NDWI_HLS', 'MNDWI_HLS', 'SAVI_HLS', 'NDMI_HLS', 'NDBI_HLS', 'NBR_HLS']);
 var LS = ee.Image(importPath + 'LandsatIndices_2024').select(['NDWI', 'MNDWI', 'SAVI', 'NDMI', 'NDBI', 'NBR']).rename(['NDWI_LS', 'MNDWI_LS', 'SAVI_LS', 'NDMI_LS', 'NDBI_LS', 'NBR_LS']);
 var LS_Tcap = ee.Image(importPath + 'landsatTasseledCapIndices_2024');
 var LS_Tcap_comp = ee.Image(importPath + 'TOAComposite_2024');
-var LScomp = ee.Image(importPath + 'S2Composite_2024').select(['red', 'green', 'blue', 'nir', 'swir1', 'swir2']).rename(['L2_red', 'L2_green', 'L2_blue', 'L2_nir', 'L2_swir1', 'L2_swir2']);
+var LScomp = ee.Image(importPath + 'LandsatComposite_2024').select(['red', 'green', 'blue', 'nir', 'swir1', 'swir2']).rename(['L2_red', 'L2_green', 'L2_blue', 'L2_nir', 'L2_swir1', 'L2_swir2']);
+var LSdNBR = ee.Image(importPath + 'LandsatIndices_dNBR_2024')
 var S1_A = ee.Image(importPath + 's1Ascending_2024').select(['VV', 'VH', 'ratio', 'ndratio']).rename(['VV_A', 'VH_A', 'ratio_A', 'ndratio_A']);
 // var S1_D = ee.Image(importPath + 's1Descending_2022').select(['VV', 'VH', 'ratio', 'ndratio']).rename(['VV_D', 'VH_D', 'ratio_D', 'ndratio_D']);
+
 
 
 // Get the image footprint to be used as geometry
@@ -67,6 +70,7 @@ Map.addLayer(S2indices_Clip, viz, 'Sentinel-2 NDVI', false);
 var stacked = S2indices
   .addBands(demBands)
   .addBands(S2comp)
+  .addBands(S2dNBR)
   .addBands(LScomp)
   //.addBands(gediMosaicA)
   // .addBands(gediMosaicB)
@@ -74,6 +78,7 @@ var stacked = S2indices
   .addBands(LS)
   .addBands(LS_Tcap)
   .addBands(LS_Tcap_comp)
+  .addBands(LSdNBR)
   .addBands(S1_A).clip(ROI);
   // .addBands(S1_D).clip(ROI);
 
@@ -112,10 +117,8 @@ Map.addLayer(stackedResampled, {}, 'stackedResampled_Regrid_Func', false);
 // Extract Training Features
 // ****************************************************
 
-var predictors = S2indices.bandNames().cat(demBands.bandNames()).cat(HLS.bandNames()).cat(LS.bandNames()).cat(LS_Tcap.bandNames()).cat(LS_Tcap_comp.bandNames()).cat(S1_A.bandNames()).cat(S2comp.bandNames()).cat(LScomp.bandNames())//.cat(S1_D.bandNames())//.cat(gediMosaicA.bandNames());
+var predictors = S2indices.bandNames().cat(S2dNBR.bandNames()).cat(demBands.bandNames()).cat(HLS.bandNames()).cat(LS.bandNames()).cat(LS_Tcap.bandNames()).cat(LS_Tcap_comp.bandNames()).cat(LSdNBR.bandNames()).cat(S1_A.bandNames()).cat(S2comp.bandNames()).cat(LScomp.bandNames())//.cat(S1_D.bandNames())//.cat(gediMosaicA.bandNames());
 print('predictors', predictors);
-
-
 
 var fc = Rx_Fire.merge(Rx_Fire_non)
 print("fc", fc)
@@ -140,7 +143,7 @@ print('N features in 30% sample', randomSample30);
 
 var randomSample70 = sample.filter('random >= 0.3');
 print('N features in 70% sample', randomSample70);
-
+print("randomSample70", randomSample70)
 
 // // Define the rasterization property
 // var property = 'Rx_Fire';  // should be 0 or 1
@@ -275,6 +278,7 @@ print('N features in 70% sample', randomSample70);
 var baseModule = require("users/kaw0055/Rx_Fire:2_Burn_Severity/model.js");
 
 var year = 2024
+var timeStart = ee.Date('2024-01-01').millis();
 var bands = stackedResampled.bandNames()
 print("bands", bands)
 var label = 'Rx_Fire'
@@ -301,7 +305,7 @@ var parameter_post_tune = ee.Dictionary({
 
 // var rf_model =  baseModule.randomForest_classification_model(training, testing, bands, stackedResampled, label, parameter_post_tune)//FeatureCollection, bandList, image, label, parameters)
 
-var rf_model = baseModule.randomForest_classification_model(randomSample70, randomSample70, bands, stackedResampled, label, parameter_post_tune)//FeatureCollection, bandList, image, label, parameters)
+var rf_model = baseModule.randomForest_classification_model(randomSample70, randomSample30, bands, stackedResampled, label, parameter_post_tune)//FeatureCollection, bandList, image, label, parameters)
 
 print(rf_model, {}, "rf_model")
 
@@ -319,14 +323,17 @@ Map.addLayer(Classification_Predicted_Image, predictVis, "Classification_Predict
 
 var Classification_Predicted_Image_crop = Classification_Predicted_Image.eq(1);
 var Classification_Predicted_Image_crop_only = Classification_Predicted_Image.updateMask(Classification_Predicted_Image_crop);
-Map.addLayer(Classification_Predicted_Image_crop_only,{palette: ['red']}, 'Classification_Predicted_Image_crop_only')
+Classification_Predicted_Image_crop_only = Classification_Predicted_Image_crop_only.set('system:time_start', timeStart);
+print('Image with time', Classification_Predicted_Image_crop_only);
+Map.addLayer(Classification_Predicted_Image_crop_only,{palette: ['red']}, 'Classification_Predicted_Image_only')
+
 
 ///////
 
 Export.image.toAsset({
   image: Classification_Predicted_Image.clip(ROI),
-  description: 'Classification_Predicted_Image',
-  assetId: exportPath + 'XXXXXXXX',
+  description: 'Classification_Predicted_Image_'+ year,
+  assetId: exportPath + 'Classification_Predicted_Image_'+ year,
   region: ROI,
   scale: gridScale,
   maxPixels: 1e13
