@@ -1,0 +1,230 @@
+// Enhanced road network visualization.
+var roadNetwork = [
+  {stylers: [{saturation: -100}]}, {
+    featureType: 'road.highway',
+    elementType: 'geometry.fill',
+    stylers: [{color: '#000055'}, {weight: .4}]
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry.stroke',
+    stylers: [{color: '#000000'}, {weight: .4}]
+  },
+  {
+    featureType: 'road.arterial',
+    elementType: 'geometry',
+    stylers: [{color: '#FF0000'}, {weight: .2}]
+  },
+  {
+    featureType: 'road.local',
+    elementType: 'geometry',
+    stylers: [{color: '#00FF55'}, {weight: .1}]
+  }
+];
+
+// Map.setOptions(
+//     'roadNetwork', {iconChange: iconChange, roadNetwork: roadNetwork});
+
+Map.setOptions(
+    'roadNetwork', {roadNetwork: roadNetwork});
+
+
+///////////
+var ROI = ee.Geometry.Rectangle([-87.3343240593025, 34.330559383876356, -87.2897779319832, 34.363157285275136]);
+// var ROI = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017").filter(ee.Filter.eq('country_na','Bhutan'));
+
+var IC_in = ee.ImageCollection("projects/servir-sco-assets/assets/Rx_Fire/Model_IC/Burn_Severity_IC")
+//Map.addLayer(IC, {}, "IC")
+
+var IC = IC_in.map(function(image) { 
+  var img_a = image.eq(1)
+  var img_b = image.updateMask(img_a)
+  return img_b; })
+
+
+var model_viz ={
+  bands: ["classification"],
+  max: 1,
+  min: 0,
+  opacity: 1,
+  palette: ["02f19b"],
+};
+
+///////////////////////
+
+var ROI_buffer = ee.Geometry.Rectangle([-87.3343240593025, 34.330559383876356, -87.2897779319832, 34.363157285275136]).buffer(10000);
+// Map.addLayer(ROI_buffer)
+Map.centerObject(ROI_buffer)
+var dataset = ee.ImageCollection('FIRMS').filterBounds(ROI_buffer)
+var firms_in = dataset.select('T21')
+
+var firms = firms_in.map(function(image) { 
+  var img_a = image.clip(ROI_buffer)
+  return img_a; })
+
+
+var firmsVis = {
+  min: 325.0,
+  max: 400.0,
+  palette: ['red', 'orange', 'yellow'],
+};
+// Map.addLayer(firms, firmsVis, "firms")
+
+//////////////////Add Panel
+var spacer = ui.Label('           ');
+
+var panel = ui.Panel({style: {width:'18%'}});
+var intro = ui.Panel([
+  ui.Label('panel 1',{fontWeight: 'bold', fontSize: '18px', margin: '7px 5px'}),
+  ui.Label('Burn Severity Classification Approach --more text here--.',{margin: '10px 7px'}),
+
+]);
+panel.add(intro)
+
+ui.root.add(panel);
+//////////////////////
+
+///////////////////////////////////////////////////////////////
+///////////////////Function for date slider ///////////////////
+///////////////////////////////////////////////////////////////
+
+var Start_period = ee.Date('2021-01-01')
+var End_period = ee.Date('2024-12-31')
+//var End_period = ee.Date(new Date().getTime())
+
+ee.Dictionary({start: Start_period, end: End_period})
+  .evaluate(renderSlider) 
+
+function renderSlider(dates) {
+  var slider = ui.DateSlider({ 
+    start: dates.start.value, 
+    end: dates.end.value, 
+    period: 365, // change to adjust the slider/date picker timeframe
+    onChange: renderDateRange, //resets everything
+    style: {width: '230px', margin: '8px 20px'},
+   
+  })
+
+  // Map.add(slider)
+  var subtitle = ui.Label('Year Selector Slider', {})
+  panel.add(subtitle)
+  panel.add(slider)
+}
+
+
+///////////////////////////////////////////////////////////////
+/////////////////Function for Date Slider Range ///////////////
+///////////////////////////////////////////////////////////////
+function renderDateRange(dateRange) {
+  Map.clear()
+  //panel.clear()
+  Map.addLayer(firms, firmsVis, 'Firms')
+  Map.addLayer(IC, model_viz, "Model Output")
+  // Map.addLayer(ROI, {}, "ROI",false)
+  // Enhanced road network visualization.
+  var roadNetwork = [
+    {stylers: [{saturation: -100}]}, {
+      featureType: 'road.highway',
+      elementType: 'geometry.fill',
+      stylers: [{color: '#000055'}, {weight: .4}]
+    },
+    {
+      featureType: 'road.highway',
+      elementType: 'geometry.stroke',
+      stylers: [{color: '#000000'}, {weight: .4}]
+    },
+    {
+      featureType: 'road.arterial',
+      elementType: 'geometry',
+      stylers: [{color: '#FF0000'}, {weight: .2}]
+    },
+    {
+      featureType: 'road.local',
+      elementType: 'geometry',
+      stylers: [{color: '#00FF55'}, {weight: .1}]
+    }
+];
+
+// Map.setOptions(
+//     'roadNetwork', {iconChange: iconChange, roadNetwork: roadNetwork});
+
+Map.setOptions(
+    'roadNetwork', {roadNetwork: roadNetwork});
+
+}  
+
+
+///////////////////////
+var label = ui.Label('Or use your own asset as the area of interest (see Readme for how to load assets)');
+var inputTextbox = ui.Textbox({
+  style: {width:'250px'},
+  placeholder: 'users/your_username/asset_name',
+  onChange: function(input) {
+    var userInput = input;
+  }
+});
+
+panel.add(label).add(inputTextbox);
+
+//////////////////////
+
+var IC_chart = ui.Chart.image.series({
+          imageCollection: IC,
+          region: ROI,
+          reducer: ee.Reducer.count(),
+          scale: 100,
+          xProperty: 'system:time_start'
+         })
+        .setSeriesNames(['classification'])
+        .setOptions({
+          title: 'classification',
+          hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+          vAxis: {
+            title: 'classification_pixels',
+            titleTextStyle: {italic: false, bold: true}
+          },
+          lineWidth: 5,
+          colors: ['e37d05', '1d6b99'],
+          curveType: 'function'
+        });
+//print("IC_chart",IC_chart)
+
+// var chart_Jan_2020 = ui.Chart.image.histogram({image: IC.first(), region: ROI, scale: 30, })//.setSeriesNames(["classification"])
+// print("chart_Jan_2020",chart_Jan_2020)
+panel.add(IC_chart)
+
+
+////
+var chart =
+    ui.Chart.image.histogram({image: firms.median(), region: ROI, scale: 500})
+        .setSeriesNames([firms])
+        .setOptions({
+          title: 'firms',
+          hAxis: {
+            title: 'firms',
+            titleTextStyle: {italic: false, bold: true},
+          },
+          vAxis:
+              {title: 'Count', titleTextStyle: {italic: false, bold: true}},
+          colors: ['cf513e', '1d6b99', 'f0af07']
+        });
+        
+panel.add(chart)
+
+///////////////////////
+
+var stats = firms.median().reduceRegion({
+ reducer: ee.Reducer.count(),
+  geometry: ROI_buffer,
+  scale: 500,
+  maxPixels: 1e15
+});
+
+var fire_num = stats.get('T21')
+print("fire_num", fire_num)
+
+var print_fire_num = fire_num.getInfo()
+
+
+var label_x = ui.Label('Firms Fire Counts' + print_fire_num);
+panel.add(label_x)
