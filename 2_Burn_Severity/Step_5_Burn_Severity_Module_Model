@@ -309,7 +309,7 @@ var rf_model = baseModule.randomForest_classification_model(randomSample70, rand
 
 print(rf_model, {}, "rf_model")
 
-var Classification_Predicted_Image = stackedResampled.classify(rf_model);
+var Classification_Predicted_Image = stackedResampled.classify(rf_model).set('system:time_start', timeStart);;
 
 var predictVis = {
   bands: ["classification"],
@@ -323,7 +323,7 @@ Map.addLayer(Classification_Predicted_Image, predictVis, "Classification_Predict
 
 var Classification_Predicted_Image_crop = Classification_Predicted_Image.eq(1);
 var Classification_Predicted_Image_crop_only = Classification_Predicted_Image.updateMask(Classification_Predicted_Image_crop);
-Classification_Predicted_Image_crop_only = Classification_Predicted_Image_crop_only.set('system:time_start', timeStart);
+// Classification_Predicted_Image_crop_only = Classification_Predicted_Image_crop_only.set('system:time_start', timeStart);
 print('Image with time', Classification_Predicted_Image_crop_only);
 Map.addLayer(Classification_Predicted_Image_crop_only,{palette: ['red']}, 'Classification_Predicted_Image_only')
 
